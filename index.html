@@ -82,6 +82,9 @@ Saldo: <span class="sum" id="balance">$ 0</span></p>
 <div><label for="turnDate">Fecha del turno</label><input id="turnDate" type="date"></div>
 <div><label for="turnTime">Hora</label><input id="turnTime" type="time"></div>
 </div>
+<label for="turnClientSearch">Buscar cliente</label>
+<input id="turnClientSearch" placeholder="Nº cliente, nombre o teléfono" oninput="suggestTurnClients()" autocomplete="off">
+<div id="turnClientSuggestions"></div>
 <label for="turnName">Cliente</label>
 <input id="turnName" placeholder="Cliente">
 <label for="turnPhone">Teléfono</label>
@@ -196,6 +199,17 @@ function prepareAppointment(){
  E('agenda').scrollIntoView({behavior:'smooth'});
 }
 
+function esc(s){return String(s||'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));}
+function suggestTurnClients(){
+ let q=E('turnClientSearch').value.trim().toLowerCase(),box=E('turnClientSuggestions');
+ if(!q){box.innerHTML='';return;}
+ let list=d.clientes.filter(c=>c.id.toLowerCase().includes(q)||(c.name||'').toLowerCase().includes(q)||(c.phone||'').toLowerCase().includes(q)).slice(0,8);
+ box.innerHTML=list.length?list.map(c=>'<button type="button" style="text-align:left;background:#eef3f7;color:#182433" onclick="pickTurnClient(\''+c.id+'\')"><b>'+esc(c.id)+'</b> · '+esc(c.name)+(c.phone?' · '+esc(c.phone):'')+'</button>').join(''):'<div style="padding:8px;color:#667">Sin coincidencias</div>';
+}
+function pickTurnClient(id){
+ let c=d.clientes.find(x=>x.id===id);if(!c)return;
+ E('turnClientSearch').value=c.id+' · '+c.name;E('turnName').value=c.name||'';E('turnPhone').value=c.phone||'';E('turnClientSuggestions').innerHTML='';
+}
 let editingAppointmentId='';
 function saveAppointment(){
  if(!E('turnDate').value||!E('turnName').value.trim())
