@@ -18,7 +18,7 @@ button{background:#0b3d66;color:white;border:0;font-weight:bold}
 label{display:block;font-weight:bold;margin-top:8px;color:#34495e}
 .turno{border-top:1px solid #dde3e8;padding:10px 0}
 .badge{display:inline-block;padding:3px 8px;border-radius:10px;background:#eef3f7;font-size:13px}
-.calhead{display:flex;align-items:center;gap:8px;margin:8px 0}.calhead button{width:auto;min-width:52px}.calhead b{flex:1;text-align:center}.calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}.dow{text-align:center;font-size:12px;font-weight:bold;color:#667}.day{min-height:48px;padding:5px;border:1px solid #dbe2e8;border-radius:8px;background:#fff;color:#182433;font-weight:normal;position:relative}.day.empty{border:0;background:transparent}.day.today{outline:2px solid #0b3d66}.day.selected{background:#e8f2fb}.dot{display:block;font-size:11px;color:#0b3d66;font-weight:bold;margin-top:3px}.danger{background:#a52a2a}.mini{width:auto;padding:8px 10px}
+.calhead{display:flex;align-items:center;gap:8px;margin:8px 0}.calhead button{width:auto;min-width:52px}.calhead b{flex:1;text-align:center}.calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}.dow{text-align:center;font-size:12px;font-weight:bold;color:#667}.day{min-height:48px;padding:5px;border:1px solid #dbe2e8;border-radius:8px;background:#fff;color:#182433;font-weight:normal;position:relative}.day.empty{border:0;background:transparent}.day.today{outline:2px solid #0b3d66}.day.selected{background:#e8f2fb}.day.pending{border-left:5px solid #d89b00}.day.confirmed{border-left:5px solid #1976d2}.day.done{border-left:5px solid #2e7d32}.day.cancelled{border-left:5px solid #9e9e9e}.dot{display:block;font-size:11px;color:#0b3d66;font-weight:bold;margin-top:3px}.danger{background:#a52a2a}.mini{width:auto;padding:8px 10px}
 @media(max-width:550px){.a{grid-template-columns:1fr}}
 @media print{.np{display:none}}
 </style>
@@ -77,6 +77,7 @@ Saldo: <span class="sum" id="balance">$ 0</span></p>
 
 <section class="c np" id="agenda">
 <h3>Agenda / Turnos</h3>
+<div id="todaySummary" class="sum" style="font-size:18px;margin-bottom:10px">Hoy: 0 turnos</div>
 <div class="a">
 <div><label for="turnDate">Fecha del turno</label><input id="turnDate" type="date"></div>
 <div><label for="turnTime">Hora</label><input id="turnTime" type="time"></div>
@@ -96,7 +97,8 @@ Saldo: <span class="sum" id="balance">$ 0</span></p>
 <option>Realizado</option>
 <option>Cancelado</option>
 </select>
-<button onclick="saveAppointment()">Guardar turno</button>
+<button id="saveTurnBtn" onclick="saveAppointment()">Guardar turno</button>
+<button id="cancelEditBtn" class="danger" style="display:none" onclick="cancelEditAppointment()">Cancelar edición</button>
 <div class="a"><button onclick="toggleCalendar()">📅 Ver agenda</button><button onclick="showAllAppointments()">Ver todos los turnos</button></div>
 <div id="calendarBox" style="display:none">
  <div class="calhead"><button class="mini" onclick="changeMonth(-1)">◀</button><b id="calTitle"></b><button class="mini" onclick="changeMonth(1)">▶</button></div>
@@ -194,20 +196,29 @@ function prepareAppointment(){
  E('agenda').scrollIntoView({behavior:'smooth'});
 }
 
+let editingAppointmentId='';
 function saveAppointment(){
  if(!E('turnDate').value||!E('turnName').value.trim())
   return alert('Completá por lo menos la fecha y el cliente.');
- d.turnoSeq++;
- d.turnos.push({
-  id:'TUR-'+String(d.turnoSeq).padStart(5,'0'),
-  date:E('turnDate').value,time:E('turnTime').value,
-  name:E('turnName').value.trim(),phone:E('turnPhone').value.trim(),
-  address:E('turnAddress').value.trim(),job:E('turnJob').value.trim(),
-  status:E('turnStatus').value
- });
- persist();renderAppointments();
- alert('Turno guardado.');
+ let data={date:E('turnDate').value,time:E('turnTime').value,name:E('turnName').value.trim(),phone:E('turnPhone').value.trim(),address:E('turnAddress').value.trim(),job:E('turnJob').value.trim(),status:E('turnStatus').value};
+ if(editingAppointmentId){
+  let t=d.turnos.find(x=>x.id===editingAppointmentId);
+  if(t)Object.assign(t,data);
+  editingAppointmentId='';
+  E('saveTurnBtn').textContent='Guardar turno';E('cancelEditBtn').style.display='none';
+  persist();render();if(E('calendarBox').style.display!=='none')renderCalendar();
+  alert('Turno actualizado.');
+ }else{
+  d.turnoSeq++;data.id='TUR-'+String(d.turnoSeq).padStart(5,'0');d.turnos.push(data);
+  persist();render();if(E('calendarBox').style.display!=='none')renderCalendar();alert('Turno guardado.');
+ }
 }
+function editAppointment(id){
+ let t=d.turnos.find(x=>x.id===id);if(!t)return;editingAppointmentId=id;
+ E('turnDate').value=t.date;E('turnTime').value=t.time||'';E('turnName').value=t.name;E('turnPhone').value=t.phone||'';E('turnAddress').value=t.address||'';E('turnJob').value=t.job||'';E('turnStatus').value=t.status||'Pendiente';
+ E('saveTurnBtn').textContent='Guardar cambios';E('cancelEditBtn').style.display='block';E('agenda').scrollIntoView({behavior:'smooth'});
+}
+function cancelEditAppointment(){editingAppointmentId='';E('saveTurnBtn').textContent='Guardar turno';E('cancelEditBtn').style.display='none';}
 
 function setStatus(id,status){
  let t=d.turnos.find(x=>x.id===id);
@@ -237,8 +248,8 @@ function renderCalendar(){
  let first=(new Date(y,m,1).getDay()+6)%7, days=new Date(y,m+1,0).getDate();
  for(let i=0;i<first;i++)html+='<div class="day empty"></div>';
  let today=new Date().toLocaleDateString('en-CA');
- for(let n=1;n<=days;n++){let ds=y+'-'+String(m+1).padStart(2,'0')+'-'+String(n).padStart(2,'0');let count=d.turnos.filter(t=>t.date===ds).length;
- html+='<button class="day '+(ds===today?'today ':'')+(ds===selectedDay?'selected':'')+'" onclick="selectDay(\''+ds+'\')">'+n+(count?'<span class="dot">'+count+' turno'+(count>1?'s':'')+'</span>':'')+'</button>';
+ for(let n=1;n<=days;n++){let ds=y+'-'+String(m+1).padStart(2,'0')+'-'+String(n).padStart(2,'0');let turns=d.turnos.filter(t=>t.date===ds),count=turns.length;let st=count?(turns.some(t=>t.status==='Pendiente')?' pending':turns.some(t=>t.status==='Confirmado')?' confirmed':turns.every(t=>t.status==='Realizado')?' done':turns.every(t=>t.status==='Cancelado')?' cancelled':'') : '';
+ html+='<button class="day '+(ds===today?'today ':'')+(ds===selectedDay?'selected':'')+st+'" onclick="selectDay(\''+ds+'\')">'+n+(count?'<span class="dot">'+count+' turno'+(count>1?'s':'')+'</span>':'')+'</button>';
  }
  E('calendar').innerHTML=html;
  if(!selectedDay){let now=new Date();if(now.getFullYear()===y&&now.getMonth()===m)selectedDay=today;}
@@ -252,7 +263,7 @@ function renderDayAppointments(){
 }
 function appointmentHTML(x){return '<div class="turno"><b>'+x.date+(x.time?' · '+x.time:'')+' · '+x.name+'</b>'+
  '<br><span class="badge">'+x.status+'</span>'+(x.phone?'<br>Tel: '+x.phone:'')+(x.address?'<br>Domicilio: '+x.address:'')+(x.job?'<br>'+x.job:'')+
- '<select onchange="setStatus(\''+x.id+'\',this.value)">'+['Pendiente','Confirmado','Realizado','Cancelado'].map(s=>'<option '+(s===x.status?'selected':'')+'>'+s+'</option>').join('')+'</select><button class="danger" onclick="deleteAppointment(\''+x.id+'\')">Eliminar turno</button></div>';}
+ '<select onchange="setStatus(\''+x.id+'\',this.value)">'+['Pendiente','Confirmado','Realizado','Cancelado'].map(s=>'<option '+(s===x.status?'selected':'')+'>'+s+'</option>').join('')+'</select><button onclick="editAppointment(\''+x.id+'\')">Editar turno</button><button class="danger" onclick="deleteAppointment(\''+x.id+'\')">Eliminar turno</button></div>';}
 
 function deleteAppointment(id){
  if(!confirm('¿Eliminar este turno?'))return;
@@ -262,6 +273,8 @@ function deleteAppointment(id){
 
 function renderAppointments(){
  let today=new Date().toLocaleDateString('en-CA');
+ let todayCount=d.turnos.filter(x=>x.date===today&&x.status!=='Cancelado').length;
+ E('todaySummary').textContent='Hoy: '+todayCount+' turno'+(todayCount===1?'':'s');
  let list=[...d.turnos].filter(x=>x.date>=today).sort((a,b)=>(a.date+' '+a.time).localeCompare(b.date+' '+b.time));
  E('turnList').innerHTML=list.map(appointmentHTML).join('')||'Sin próximos turnos cargados.';
 }
