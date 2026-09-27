@@ -286,10 +286,17 @@ async function setStatus(id,status){
  if(t){t.status=status;persist();renderAppointments();if(E('calendarBox').style.display!=='none')renderCalendar();try{await updTurn(t);syncMsg('Sincronizado ✓')}catch(e){syncMsg('Sin sincronizar',false)}}
 }
 
-function deleteBudget(id){
+async function deleteBudget(id){
  if(!confirm('¿Eliminar este presupuesto?'))return;
- d.presupuestos=d.presupuestos.filter(x=>x.id!==id);
- persist();render();
+ const exactId=String(id);
+ try{
+  if(session?.access_token)await delCloud('presupuestos',exactId);
+  d.presupuestos=d.presupuestos.filter(x=>String(x.id)!==exactId);
+  persist();render();syncMsg('Sincronizado ✓');
+ }catch(e){
+  syncMsg('No se pudo eliminar',false);
+  alert('No se pudo eliminar el presupuesto seleccionado: '+String(e?.message||e).slice(0,400));
+ }
 }
 
 let calCursor=new Date();
