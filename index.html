@@ -147,7 +147,30 @@ function logout(){session=null;localStorage.removeItem(SESSION_KEY);showAuth();s
 const fromC=x=>({id:x.id,name:x.nombre||'',phone:x.telefono||'',address:x.domicilio||''});
 const fromP=x=>({id:x.id,cid:x.cliente_id||'',name:x.cliente||'',phone:x.telefono||'',job:x.trabajo||'',total:+x.total||0,date:x.fecha||'',eq:x.equipo||'',model:x.modelo||'',parts:+x.repuestos||0,labor:+x.mano_obra||0,deposit:+x.sena||0,balance:+x.saldo||0});
 const fromT=x=>({id:String(x.id),date:x.fecha||'',time:(x.hora||'').slice(0,5),name:x.cliente||'',phone:x.telefono||'',address:x.domicilio||'',job:x.trabajo||'',status:x.estado||'Pendiente'});
-async function syncCloud(){if(!session?.access_token)return;try{syncMsg('Sincronizando…');let [c,p,t]=await Promise.all([api('/rest/v1/clientes?select=*&order=created_at.asc'),api('/rest/v1/presupuestos?select=*&order=created_at.asc'),api('/rest/v1/turnos?select=*&order=fecha.asc,hora.asc')]);d.clientes=(c||[]).map(fromC);d.presupuestos=(p||[]).map(fromP);d.turnos=(t||[]).map(fromT);d.clienteSeq=Math.max(0,...d.clientes.map(x=>+String(x.id).replace(/\D/g,'')||0));d.presupuestoSeq=Math.max(0,...d.presupuestos.map(x=>+String(x.id).replace(/\D/g,'')||0));persist();render();if(E('calendarBox').style.display!=='none')renderCalendar();syncMsg('Sincronizado ✓')}catch(e){syncMsg('Error al sincronizar',false);console.error(e)}}
+async function syncCloud(){
+ if(!session?.access_token)return;
+ try{
+  syncMsg('Sincronizando…');
+  const c=await api('/rest/v1/clientes?select=*');
+  const p=await api('/rest/v1/presupuestos?select=*');
+  const t=await api('/rest/v1/turnos?select=*');
+  const cloudEmpty=!(c||[]).length&&!(p||[]).length&&!(t||[]).length;
+  const localHasData=d.clientes.length||d.presupuestos.length||d.turnos.length;
+  if(cloudEmpty&&localHasData){
+   syncMsg('Subiendo datos de este teléfono…');
+   for(const x of d.clientes) await putClient(x);
+   for(const x of d.presupuestos) await putBudget(x);
+   for(const x of d.turnos){if(String(x.id).startsWith('TUR-')){const row=await addTurn(x);if(row)x.id=String(row.id)}}
+   persist();return await syncCloud();
+  }
+  d.clientes=(c||[]).map(fromC);
+  d.presupuestos=(p||[]).map(fromP);
+  d.turnos=(t||[]).map(fromT).sort((a,b)=>(a.date+' '+a.time).localeCompare(b.date+' '+b.time));
+  d.clienteSeq=Math.max(0,...d.clientes.map(x=>+String(x.id).replace(/\D/g,'')||0));
+  d.presupuestoSeq=Math.max(0,...d.presupuestos.map(x=>+String(x.id).replace(/\D/g,'')||0));
+  persist();render();if(E('calendarBox').style.display!=='none')renderCalendar();syncMsg('Sincronizado ✓');
+ }catch(e){const msg=String(e?.message||e||'Error desconocido');syncMsg('Error al sincronizar',false);console.error('SBSERVICE sync:',msg);alert('Error de sincronización: '+msg.slice(0,500));}
+}
 async function putClient(c){if(session?.access_token)await api('/rest/v1/clientes?on_conflict=id',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=representation'},body:JSON.stringify({id:c.id,nombre:c.name,telefono:c.phone||null,domicilio:c.address||null})})}
 async function putBudget(p){if(session?.access_token)await api('/rest/v1/presupuestos',{method:'POST',body:JSON.stringify({id:p.id,cliente_id:p.cid,cliente:p.name,telefono:p.phone||null,trabajo:p.job,total:p.total,fecha:p.date||null,estado:'Pendiente',equipo:p.eq,modelo:p.model,repuestos:p.parts,mano_obra:p.labor,sena:p.deposit,saldo:p.balance})})}
 async function addTurn(t){if(!session?.access_token)return null;let r=await api('/rest/v1/turnos',{method:'POST',body:JSON.stringify({fecha:t.date,hora:t.time||null,cliente:t.name,telefono:t.phone||null,domicilio:t.address||null,trabajo:t.job||null,estado:t.status})});return r?.[0]}
@@ -305,9 +328,12 @@ function appointmentHTML(x){return '<div class="turno"><b>'+x.date+(x.time?' · 
 
 async function deleteAppointment(id){
  if(!confirm('¿Eliminar este turno?'))return;
- let i=d.turnos.findIndex(x=>x.id===id);if(i<0)return;d.turnos.splice(i,1);
- persist();renderAppointments();if(E('calendarBox').style.display!=='none')renderCalendar();
- if(!String(id).startsWith('TUR-'))try{await delCloud('turnos',id);syncMsg('Sincronizado ✓')}catch(e){syncMsg('Sin sincronizar',false)}
+ const exactId=String(id);
+ try{
+  if(!exactId.startsWith('TUR-'))await delCloud('turnos',exactId);
+  const i=d.turnos.findIndex(x=>String(x.id)===exactId);if(i>=0)d.turnos.splice(i,1);
+  persist();renderAppointments();if(E('calendarBox').style.display!=='none')renderCalendar();syncMsg('Sincronizado ✓');
+ }catch(e){syncMsg('No se pudo eliminar',false);alert('No se pudo eliminar el turno seleccionado: '+String(e?.message||e).slice(0,400));}
 }
 
 function renderAppointments(){
