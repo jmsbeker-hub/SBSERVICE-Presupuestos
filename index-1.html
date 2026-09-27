@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b3d66">
+<link rel="manifest" href="manifest.json">
+<title>SBSERVICE Presupuestos</title>
+<style>
+body{font-family:Arial;margin:0;background:#f4f6f8;color:#182433}
+header{background:#0b3d66;color:white;padding:18px;text-align:center}
+.w{max-width:700px;margin:auto;padding:14px}
+.c{background:white;padding:16px;border-radius:14px;margin-bottom:14px}
+input,select,textarea,button{box-sizing:border-box;width:100%;padding:12px;margin:5px 0;border-radius:9px;border:1px solid #ccd4dc;font:inherit}
+button{background:#0b3d66;color:white;border:0;font-weight:bold}
+.a{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sum{font-size:22px;font-weight:bold;color:#0b3d66}
+label{display:block;font-weight:bold;margin-top:8px;color:#34495e}
+.turno{border-top:1px solid #dde3e8;padding:10px 0}
+.badge{display:inline-block;padding:3px 8px;border-radius:10px;background:#eef3f7;font-size:13px}
+.calhead{display:flex;align-items:center;gap:8px;margin:8px 0}.calhead button{width:auto;min-width:52px}.calhead b{flex:1;text-align:center}.calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}.dow{text-align:center;font-size:12px;font-weight:bold;color:#667}.day{min-height:48px;padding:5px;border:1px solid #dbe2e8;border-radius:8px;background:#fff;color:#182433;font-weight:normal;position:relative}.day.empty{border:0;background:transparent}.day.today{outline:2px solid #0b3d66}.day.selected{background:#e8f2fb}.day.pending{border-left:5px solid #d89b00}.day.confirmed{border-left:5px solid #1976d2}.day.done{border-left:5px solid #2e7d32}.day.cancelled{border-left:5px solid #9e9e9e}.dot{display:block;font-size:11px;color:#0b3d66;font-weight:bold;margin-top:3px}.danger{background:#a52a2a}.mini{width:auto;padding:8px 10px}
+.authbox{background:#eef5fb;border:1px solid #c8d9e8;padding:14px;border-radius:14px;margin-bottom:14px}.ok{color:#2e7d32;font-weight:bold}.bad{color:#a52a2a;font-weight:bold}@media(max-width:550px){.a{grid-template-columns:1fr}}
+@media print{.np{display:none}}
+</style>
+</head>
+<body>
+<header>
+<img src="logo.jpg" alt="SBSERVICE" style="width:150px;max-width:42vw;border-radius:50%;display:block;margin:0 auto 8px">
+<div>Presupuestos · 3624171540</div>
+</header>
+
+<main class="w">
+<section class="authbox np">
+<div id="loginPanel"><h3>Acceso SBSERVICE</h3><input id="loginEmail" type="email" placeholder="Correo"><input id="loginPassword" type="password" placeholder="Contraseña"><button onclick="login()">Ingresar</button></div>
+<div id="sessionPanel" style="display:none"><b id="sessionEmail"></b><br><span id="syncState">Conectando…</span><button class="mini" onclick="syncCloud()">Actualizar datos</button><button class="danger mini" onclick="logout()">Cerrar sesión</button></div>
+</section>
+<section class="c np">
+<b>Buscar cliente</b>
+<input id="q" placeholder="Nombre, teléfono o CLI-0001">
+<button onclick="search()">Buscar</button>
+<div id="r"></div>
+</section>
+
+<section class="c">
+<h3>Nuevo presupuesto · <span id="pv"></span></h3>
+<div class="a">
+<input id="date" type="date">
+<input id="cid" readonly placeholder="Nº cliente automático">
+</div>
+<input id="name" placeholder="Cliente">
+<input id="phone" placeholder="Teléfono">
+<select id="eq">
+<option>Aire acondicionado</option>
+<option>Heladera</option>
+<option>Lavarropas</option>
+<option>Anafe</option>
+<option>Otro</option>
+</select>
+<input id="model" placeholder="Marca / modelo">
+<textarea id="job" placeholder="Trabajo / diagnóstico"></textarea>
+
+<label for="parts">Repuestos / materiales $</label>
+<input id="parts" type="number" value="0" min="0">
+
+<label for="labor">Mano de obra $</label>
+<input id="labor" type="number" value="0" min="0">
+
+<label for="deposit">Seña / pago recibido $</label>
+<input id="deposit" type="number" value="0" min="0">
+
+<p>Total: <span class="sum" id="total">$ 0</span><br>
+Saldo: <span class="sum" id="balance">$ 0</span></p>
+
+<div class="a np">
+<button onclick="save()">Guardar</button>
+<button onclick="print()">PDF / Imprimir</button>
+</div>
+<button class="np" onclick="wa()">WhatsApp</button>
+<button class="np" onclick="prepareAppointment()">Agendar turno</button>
+</section>
+
+<section class="c np" id="agenda">
+<h3>Agenda / Turnos</h3>
+<div id="todaySummary" class="sum" style="font-size:18px;margin-bottom:10px">Hoy: 0 turnos</div>
+<div class="a">
+<div><label for="turnDate">Fecha del turno</label><input id="turnDate" type="date"></div>
+<div><label for="turnTime">Hora</label><input id="turnTime" type="time"></div>
+</div>
+<label for="turnClientSearch">Buscar cliente</label>
+<input id="turnClientSearch" placeholder="Nº cliente, nombre o teléfono" oninput="suggestTurnClients()" autocomplete="off">
+<div id="turnClientSuggestions"></div>
+<label for="turnName">Cliente</label>
+<input id="turnName" placeholder="Cliente">
+<label for="turnPhone">Teléfono</label>
+<input id="turnPhone" placeholder="Teléfono">
+<label for="turnAddress">Domicilio</label>
+<input id="turnAddress" placeholder="Domicilio del servicio">
+<label for="turnJob">Trabajo / servicio</label>
+<textarea id="turnJob" placeholder="Trabajo a realizar"></textarea>
+<label for="turnStatus">Estado</label>
+<select id="turnStatus">
+<option>Pendiente</option>
+<option>Confirmado</option>
+<option>Realizado</option>
+<option>Cancelado</option>
+</select>
+<button id="saveTurnBtn" onclick="saveAppointment()">Guardar turno</button>
+<button id="cancelEditBtn" class="danger" style="display:none" onclick="cancelEditAppointment()">Cancelar edición</button>
+<div class="a"><button onclick="toggleCalendar()">📅 Ver agenda</button><button onclick="showAllAppointments()">Ver todos los turnos</button></div>
+<div id="calendarBox" style="display:none">
+ <div class="calhead"><button class="mini" onclick="changeMonth(-1)">◀</button><b id="calTitle"></b><button class="mini" onclick="changeMonth(1)">▶</button></div>
+ <div class="calendar" id="calendar"></div>
+ <h3 id="selectedTitle">Turnos del día</h3><div id="dayAppointments"></div>
+</div>
+<h3>Próximos turnos</h3>
+<div id="turnList"></div>
+</section>
+
+<section class="c np">
+<h3>Últimos presupuestos</h3>
+<div id="hist"></div>
+</section>
+</main>
+
+<script>
+const K='sbserviceDB';
+let d=JSON.parse(localStorage.getItem(K)||'{"clientes":[],"presupuestos":[],"turnos":[],"clienteSeq":0,"presupuestoSeq":0,"turnoSeq":0}');
+d.clientes=d.clientes||[];
+d.presupuestos=d.presupuestos||[];
+d.turnos=d.turnos||[];
+d.clienteSeq=d.clienteSeq||d.clientes.length;
+d.presupuestoSeq=d.presupuestoSeq||d.presupuestos.length;
+d.turnoSeq=d.turnoSeq||d.turnos.length;
+
+const E=x=>document.getElementById(x);
+const M=n=>'$ '+Number(n||0).toLocaleString('es-AR');
+const persist=()=>localStorage.setItem(K,JSON.stringify(d));
+const SB_URL='https://qklyhizyhvwldygvijel.supabase.co';
+const SB_KEY='sb_publishable_Wu4ad8nVN6cD9eUaA2iVuQ_uRi3Xa0X';
+const SESSION_KEY='sbserviceSession';
+let session=JSON.parse(localStorage.getItem(SESSION_KEY)||'null');
+function syncMsg(t,ok=true){let e=E('syncState');if(e){e.textContent=t;e.className=ok?'ok':'bad'}}
+function showAuth(){let on=!!session?.access_token;E('loginPanel').style.display=on?'none':'block';E('sessionPanel').style.display=on?'block':'none';if(on)E('sessionEmail').textContent=session.user?.email||'Usuario conectado'}
+async function api(path,opt={}){let h={apikey:SB_KEY,'Content-Type':'application/json',Prefer:'return=representation',...(opt.headers||{})};if(session?.access_token)h.Authorization='Bearer '+session.access_token;let r=await fetch(SB_URL+path,{...opt,headers:h});if(!r.ok)throw new Error(await r.text());if(r.status===204)return null;let t=await r.text();return t?JSON.parse(t):null}
+async function login(){let email=E('loginEmail').value.trim(),password=E('loginPassword').value;if(!email||!password)return alert('Ingresá correo y contraseña.');try{let r=await fetch(SB_URL+'/auth/v1/token?grant_type=password',{method:'POST',headers:{apikey:SB_KEY,'Content-Type':'application/json'},body:JSON.stringify({email,password})});let j=await r.json();if(!r.ok)throw new Error(j.msg||j.error_description||'Datos incorrectos');session=j;localStorage.setItem(SESSION_KEY,JSON.stringify(j));showAuth();await syncCloud()}catch(e){alert('No se pudo ingresar: '+e.message)}}
+function logout(){session=null;localStorage.removeItem(SESSION_KEY);showAuth();syncMsg('Sin iniciar sesión',false)}
+const fromC=x=>({id:x.id,name:x.nombre||'',phone:x.telefono||'',address:x.domicilio||''});
+const fromP=x=>({id:x.id,cid:x.cliente_id||'',name:x.cliente||'',phone:x.telefono||'',job:x.trabajo||'',total:+x.total||0,date:x.fecha||'',eq:x.equipo||'',model:x.modelo||'',parts:+x.repuestos||0,labor:+x.mano_obra||0,deposit:+x.sena||0,balance:+x.saldo||0});
+const fromT=x=>({id:String(x.id),date:x.fecha||'',time:(x.hora||'').slice(0,5),name:x.cliente||'',phone:x.telefono||'',address:x.domicilio||'',job:x.trabajo||'',status:x.estado||'Pendiente'});
+async function syncCloud(){
+ if(!session?.access_token)return;
+ try{
+  syncMsg('Sincronizando…');
+  const c=await api('/rest/v1/clientes?select=*');
+  const p=await api('/rest/v1/presupuestos?select=*');
+  const t=await api('/rest/v1/turnos?select=*');
+  const cloudEmpty=!(c||[]).length&&!(p||[]).length&&!(t||[]).length;
+  const localHasData=d.clientes.length||d.presupuestos.length||d.turnos.length;
+  if(cloudEmpty&&localHasData){
+   syncMsg('Subiendo datos de este teléfono…');
+   for(const x of d.clientes) await putClient(x);
+   for(const x of d.presupuestos) await putBudget(x);
+   for(const x of d.turnos){if(String(x.id).startsWith('TUR-')){const row=await addTurn(x);if(row)x.id=String(row.id)}}
+   persist();return await syncCloud();
+  }
+  d.clientes=(c||[]).map(fromC);
+  d.presupuestos=(p||[]).map(fromP);
+  d.turnos=(t||[]).map(fromT).sort((a,b)=>(a.date+' '+a.time).localeCompare(b.date+' '+b.time));
+  d.clienteSeq=Math.max(0,...d.clientes.map(x=>+String(x.id).replace(/\D/g,'')||0));
+  d.presupuestoSeq=Math.max(0,...d.presupuestos.map(x=>+String(x.id).replace(/\D/g,'')||0));
+  persist();render();if(E('calendarBox').style.display!=='none')renderCalendar();syncMsg('Sincronizado ✓');
+ }catch(e){const msg=String(e?.message||e||'Error desconocido');syncMsg('Error al sincronizar',false);console.error('SBSERVICE sync:',msg);alert('Error de sincronización: '+msg.slice(0,500));}
+}
+async function putClient(c){if(session?.access_token)await api('/rest/v1/clientes?on_conflict=id',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=representation'},body:JSON.stringify({id:c.id,nombre:c.name,telefono:c.phone||null,domicilio:c.address||null})})}
+async function putBudget(p){if(session?.access_token)await api('/rest/v1/presupuestos',{method:'POST',body:JSON.stringify({id:p.id,cliente_id:p.cid,cliente:p.name,telefono:p.phone||null,trabajo:p.job,total:p.total,fecha:p.date||null,estado:'Pendiente',equipo:p.eq,modelo:p.model,repuestos:p.parts,mano_obra:p.labor,sena:p.deposit,saldo:p.balance})})}
+async function addTurn(t){if(!session?.access_token)return null;let r=await api('/rest/v1/turnos',{method:'POST',body:JSON.stringify({fecha:t.date,hora:t.time||null,cliente:t.name,telefono:t.phone||null,domicilio:t.address||null,trabajo:t.job||null,estado:t.status})});return r?.[0]}
+async function updTurn(t){if(session?.access_token&&!String(t.id).startsWith('TUR-'))await api('/rest/v1/turnos?id=eq.'+encodeURIComponent(t.id),{method:'PATCH',body:JSON.stringify({fecha:t.date,hora:t.time||null,cliente:t.name,telefono:t.phone||null,domicilio:t.address||null,trabajo:t.job||null,estado:t.status})})}
+async function delCloud(table,id){if(session?.access_token)await api('/rest/v1/'+table+'?id=eq.'+encodeURIComponent(id),{method:'DELETE'})}
+
+
+function calc(){
+ let t=+E('parts').value + +E('labor').value;
+ E('total').textContent=M(t);
+ E('balance').textContent=M(Math.max(0,t- +E('deposit').value));
+}
+['parts','labor','deposit'].forEach(x=>E(x).oninput=calc);
+
+function search(){
+ let q=E('q').value.toLowerCase();
+ let c=d.clientes.find(x=>x.id.toLowerCase()==q||x.phone.includes(q)||x.name.toLowerCase().includes(q));
+ if(c){
+  E('cid').value=c.id;E('name').value=c.name;E('phone').value=c.phone;
+  E('r').textContent='Cliente '+c.id+' cargado';
+ }else E('r').textContent='No encontrado: se creará al guardar.';
+}
+
+function client(){
+ let n=E('name').value.trim(),p=E('phone').value.trim();
+ let c=d.clientes.find(x=>(p&&x.phone==p)||x.name.toLowerCase()==n.toLowerCase());
+ if(c)return c;
+ d.clienteSeq++;
+ c={id:'CLI-'+String(d.clienteSeq).padStart(4,'0'),name:n,phone:p};
+ d.clientes.push(c);
+ return c;
+}
+
+async function save(){
+ if(!E('name').value.trim()||!E('job').value.trim())return alert('Completá cliente y trabajo.');
+ let c=client(),parts=+E('parts').value,labor=+E('labor').value,t=parts+labor;
+ d.presupuestoSeq++;
+ let p={
+  id:'PRE-'+String(d.presupuestoSeq).padStart(6,'0'),
+  cid:c.id,name:c.name,phone:c.phone,date:E('date').value,
+  eq:E('eq').value,model:E('model').value,job:E('job').value,
+  parts:parts,labor:labor,total:t,deposit:+E('deposit').value,
+  balance:Math.max(0,t- +E('deposit').value)
+ };
+ d.presupuestos.push(p);
+ E('cid').value=c.id;
+ persist();render();
+ try{await putClient(c);await putBudget(p);syncMsg('Sincronizado ✓')}catch(e){syncMsg('Sin sincronizar',false);console.error(e)}
+ alert('Guardado: '+p.id);
+}
+
+function wa(){
+ let t=+E('parts').value+ +E('labor').value;
+ let s=Math.max(0,t- +E('deposit').value);
+ let msg='SBSERVICE - Presupuesto\nCliente: '+E('name').value+
+ '\nEquipo: '+E('eq').value+' '+E('model').value+
+ '\nTrabajo: '+E('job').value+
+ '\nRepuestos / materiales: '+M(E('parts').value)+
+ '\nMano de obra: '+M(E('labor').value)+
+ '\nTotal: '+M(t)+
+ '\nSeña / pago recibido: '+M(E('deposit').value)+
+ '\nSaldo: '+M(s)+
+ '\nTel. SBSERVICE: 3624171540';
+ let p=E('phone').value.replace(/\D/g,'');
+ if(p&&!p.startsWith('54'))p='54'+p;
+ location.href='https://wa.me/'+p+'?text='+encodeURIComponent(msg);
+}
+
+function prepareAppointment(){
+ E('turnName').value=E('name').value;
+ E('turnPhone').value=E('phone').value;
+ E('turnJob').value=(E('eq').value+' '+E('model').value+' - '+E('job').value).trim();
+ E('agenda').scrollIntoView({behavior:'smooth'});
+}
+
+function esc(s){return String(s||'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));}
+function suggestTurnClients(){
+ let q=E('turnClientSearch').value.trim().toLowerCase(),box=E('turnClientSuggestions');
+ if(!q){box.innerHTML='';return;}
+ let list=d.clientes.filter(c=>c.id.toLowerCase().includes(q)||(c.name||'').toLowerCase().includes(q)||(c.phone||'').toLowerCase().includes(q)).slice(0,8);
+ box.innerHTML=list.length?list.map(c=>'<button type="button" style="text-align:left;background:#eef3f7;color:#182433" onclick="pickTurnClient(\''+c.id+'\')"><b>'+esc(c.id)+'</b> · '+esc(c.name)+(c.phone?' · '+esc(c.phone):'')+'</button>').join(''):'<div style="padding:8px;color:#667">Sin coincidencias</div>';
+}
+function pickTurnClient(id){
+ let c=d.clientes.find(x=>x.id===id);if(!c)return;
+ E('turnClientSearch').value=c.id+' · '+c.name;E('turnName').value=c.name||'';E('turnPhone').value=c.phone||'';E('turnClientSuggestions').innerHTML='';
+}
+let editingAppointmentId='';
+async function saveAppointment(){
+ if(!E('turnDate').value||!E('turnName').value.trim())
+  return alert('Completá por lo menos la fecha y el cliente.');
+ let data={date:E('turnDate').value,time:E('turnTime').value,name:E('turnName').value.trim(),phone:E('turnPhone').value.trim(),address:E('turnAddress').value.trim(),job:E('turnJob').value.trim(),status:E('turnStatus').value};
+ if(editingAppointmentId){
+  let t=d.turnos.find(x=>x.id===editingAppointmentId);
+  if(t)Object.assign(t,data);
+  editingAppointmentId='';
+  E('saveTurnBtn').textContent='Guardar turno';E('cancelEditBtn').style.display='none';
+  persist();render();if(E('calendarBox').style.display!=='none')renderCalendar();
+  alert('Turno actualizado.');
+ }else{
+  data.id='TUR-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,9);d.turnos.push(data);
+  persist();render();if(E('calendarBox').style.display!=='none')renderCalendar();try{let row=await addTurn(data);if(row){data.id=String(row.id);persist();render()}syncMsg('Sincronizado ✓')}catch(e){syncMsg('Sin sincronizar',false);console.error(e)}alert('Turno guardado.');
+ }
+}
+function editAppointment(id){
+ let t=d.turnos.find(x=>x.id===id);if(!t)return;editingAppointmentId=id;
+ E('turnDate').value=t.date;E('turnTime').value=t.time||'';E('turnName').value=t.name;E('turnPhone').value=t.phone||'';E('turnAddress').value=t.address||'';E('turnJob').value=t.job||'';E('turnStatus').value=t.status||'Pendiente';
+ E('saveTurnBtn').textContent='Guardar cambios';E('cancelEditBtn').style.display='block';E('agenda').scrollIntoView({behavior:'smooth'});
+}
+function cancelEditAppointment(){editingAppointmentId='';E('saveTurnBtn').textContent='Guardar turno';E('cancelEditBtn').style.display='none';}
+
+async function setStatus(id,status){
+ let t=d.turnos.find(x=>x.id===id);
+ if(t){t.status=status;persist();renderAppointments();if(E('calendarBox').style.display!=='none')renderCalendar();try{await updTurn(t);syncMsg('Sincronizado ✓')}catch(e){syncMsg('Sin sincronizar',false)}}
+}
+
+async function deleteBudget(id){
+ if(!confirm('¿Eliminar este presupuesto?'))return;
+ const exactId=String(id);
+ try{
+  if(session?.access_token)await delCloud('presupuestos',exactId);
+  d.presupuestos=d.presupuestos.filter(x=>String(x.id)!==exactId);
+  persist();render();syncMsg('Sincronizado ✓');
+ }catch(e){
+  syncMsg('No se pudo eliminar',false);
+  alert('No se pudo eliminar el presupuesto seleccionado: '+String(e?.message||e).slice(0,400));
+ }
+}
+
+let calCursor=new Date();
+let selectedDay='';
+function toggleCalendar(){
+ let b=E('calendarBox'); b.style.display=b.style.display==='none'?'block':'none';
+ if(b.style.display==='block') renderCalendar();
+}
+function changeMonth(n){calCursor=new Date(calCursor.getFullYear(),calCursor.getMonth()+n,1);renderCalendar();}
+function selectDay(ds){selectedDay=ds;renderCalendar();renderDayAppointments();}
+function showAllAppointments(){selectedDay='';E('calendarBox').style.display='none';renderAppointments();}
+function renderCalendar(){
+ let y=calCursor.getFullYear(),m=calCursor.getMonth();
+ E('calTitle').textContent=new Intl.DateTimeFormat('es-AR',{month:'long',year:'numeric'}).format(calCursor);
+ let names=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+ let html=names.map(x=>'<div class="dow">'+x+'</div>').join('');
+ let first=(new Date(y,m,1).getDay()+6)%7, days=new Date(y,m+1,0).getDate();
+ for(let i=0;i<first;i++)html+='<div class="day empty"></div>';
+ let today=new Date().toLocaleDateString('en-CA');
+ for(let n=1;n<=days;n++){let ds=y+'-'+String(m+1).padStart(2,'0')+'-'+String(n).padStart(2,'0');let turns=d.turnos.filter(t=>t.date===ds),count=turns.length;let st=count?(turns.some(t=>t.status==='Pendiente')?' pending':turns.some(t=>t.status==='Confirmado')?' confirmed':turns.every(t=>t.status==='Realizado')?' done':turns.every(t=>t.status==='Cancelado')?' cancelled':'') : '';
+ html+='<button class="day '+(ds===today?'today ':'')+(ds===selectedDay?'selected':'')+st+'" onclick="selectDay(\''+ds+'\')">'+n+(count?'<span class="dot">'+count+' turno'+(count>1?'s':'')+'</span>':'')+'</button>';
+ }
+ E('calendar').innerHTML=html;
+ if(!selectedDay){let now=new Date();if(now.getFullYear()===y&&now.getMonth()===m)selectedDay=today;}
+ renderDayAppointments();
+}
+function renderDayAppointments(){
+ if(!E('dayAppointments'))return;
+ E('selectedTitle').textContent=selectedDay?'Turnos · '+selectedDay:'Turnos del día';
+ let list=d.turnos.filter(x=>x.date===selectedDay).sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+ E('dayAppointments').innerHTML=list.map(appointmentHTML).join('')||'Sin turnos para esta fecha.';
+}
+function appointmentHTML(x){return '<div class="turno"><b>'+x.date+(x.time?' · '+x.time:'')+' · '+x.name+'</b>'+
+ '<br><span class="badge">'+x.status+'</span>'+(x.phone?'<br>Tel: '+x.phone:'')+(x.address?'<br>Domicilio: '+x.address:'')+(x.job?'<br>'+x.job:'')+
+ '<select onchange="setStatus(\''+x.id+'\',this.value)">'+['Pendiente','Confirmado','Realizado','Cancelado'].map(s=>'<option '+(s===x.status?'selected':'')+'>'+s+'</option>').join('')+'</select><button onclick="editAppointment(\''+x.id+'\')">Editar turno</button><button class="danger" onclick="deleteAppointment(\''+x.id+'\')">Eliminar turno</button></div>';}
+
+async function deleteAppointment(id){
+ if(!confirm('¿Eliminar este turno?'))return;
+ const exactId=String(id);
+ try{
+  if(!exactId.startsWith('TUR-'))await delCloud('turnos',exactId);
+  const i=d.turnos.findIndex(x=>String(x.id)===exactId);if(i>=0)d.turnos.splice(i,1);
+  persist();renderAppointments();if(E('calendarBox').style.display!=='none')renderCalendar();syncMsg('Sincronizado ✓');
+ }catch(e){syncMsg('No se pudo eliminar',false);alert('No se pudo eliminar el turno seleccionado: '+String(e?.message||e).slice(0,400));}
+}
+
+function renderAppointments(){
+ let today=new Date().toLocaleDateString('en-CA');
+ let todayCount=d.turnos.filter(x=>x.date===today&&x.status!=='Cancelado').length;
+ E('todaySummary').textContent='Hoy: '+todayCount+' turno'+(todayCount===1?'':'s');
+ let list=[...d.turnos].filter(x=>x.date>=today).sort((a,b)=>(a.date+' '+a.time).localeCompare(b.date+' '+b.time));
+ E('turnList').innerHTML=list.map(appointmentHTML).join('')||'Sin próximos turnos cargados.';
+}
+
+function render(){
+ E('pv').textContent='PRE-'+String(d.presupuestoSeq+1).padStart(6,'0');
+ E('hist').innerHTML=[...d.presupuestos].reverse().slice(0,10).map(x=>
+  '<div class="turno"><b>'+x.id+'</b> · '+x.name+' ('+x.cid+') · '+M(x.total)+'<button class="danger" onclick="deleteBudget(\''+x.id+'\')">Eliminar presupuesto</button></div>'
+ ).join('')||'Sin presupuestos todavía.';
+ renderAppointments();
+}
+
+E('date').value=new Date().toISOString().slice(0,10);
+E('turnDate').value=new Date().toISOString().slice(0,10);
+calc();render();showAuth();if(session?.access_token)syncCloud();setInterval(()=>{if(session?.access_token)syncCloud()},15000);
+if('serviceWorker'in navigator)navigator.serviceWorker.register('service-worker.js');
+</script>
+</body>
+</html>
