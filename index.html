@@ -363,6 +363,313 @@ E('date').value=new Date().toISOString().slice(0,10);
 E('turnDate').value=new Date().toISOString().slice(0,10);
 calc();render();showAuth();if(session?.access_token)syncCloud();setInterval(()=>{if(session?.access_token)syncCloud()},15000);
 if('serviceWorker'in navigator)navigator.serviceWorker.register('service-worker.js');
+ // MODULO FINANZAS SBSERVICE
+(() => {
+const main = document.querySelector('main');
+const sections = [...main.querySelectorAll(':scope > section.c')];
+const nav = document.createElement('div');
+nav.className = 'a np';
+nav.innerHTML = `
+<button id="finBack">Presupuestos y turnos</button>
+<button id="finOpen" style="background:#167849">Finanzas</button>`;
+main.insertBefore(nav, sections[0]);
+
+const panel = document.createElement('section');
+panel.className = 'c np';
+panel.style.display = 'none';
+panel.innerHTML = `
+<h2>Finanzas SBSERVICE</h2>
+<p id="fStatus"></p>
+<label>Periodo del balance</label>
+<select id="fPeriod">
+<option value="mes">Este mes</option>
+<option value="dia">Hoy</option>
+<option value="anio">Este año</option>
+<option value="todo">Historial completo</option>
+</select>
+<div id="fBalance" class="sum"></div>
+<h3>Registrar movimiento</h3>
+<form id="fForm">
+<label>Fecha</label>
+<input id="fDate" type="date" required>
+<label>Tipo de movimiento</label>
+<select id="fType">
+<option>Ingreso</option>
+<option>Egreso</option>
+<option>Aporte</option>
+<option>Retiro</option>
+</select>
+<label>Categoria</label>
+<select id="fCat">
+<option>Reparaciones</option>
+<option>Instalaciones</option>
+<option>Mantenimiento</option>
+<option>Repuestos</option>
+<option>Materiales</option>
+<option>Combustible</option>
+<option>Herramientas</option>
+<option>Impuestos</option>
+<option>Retiro socio</option>
+<option>Aporte socio</option>
+<option>Otros</option>
+</select>
+<label>Presupuesto asociado</label>
+<select id="fBudget"></select>
+<label>Cliente o socio</label>
+<input id="fClient">
+<label>Descripcion</label>
+<textarea id="fDesc" required></textarea>
+<label>Importe en pesos</label>
+<input id="fAmount" type="number" min="0.01" max="999999999999.99" step="0.01" required>
+<label>Medio de pago</label>
+<select id="fPay">
+<option>Efectivo</option>
+<option>Transferencia</option>
+<option>Mercado Pago</option>
+<option>Otro</option>
+</select>
+<button id="fSave" disabled>Guardar movimiento</button>
+<button type="button" id="fCancel">Cancelar edicion</button>
+</form>
+<button id="fRefresh">Actualizar datos</button>
+<button id="fExport">Descargar respaldo CSV</button>
+<h3>Rentabilidad por trabajo</h3>
+<div id="fJobs"></div>
+<h3>Historial de movimientos</h3>
+<div id="fList"></div>`;
+main.appendChild(panel);
+
+let rows = [], editing = null;
+let ready = false, busy = false, loading = false;
+const today = () => new Intl.DateTimeFormat('sv-SE',{
+timeZone:'America/Argentina/Buenos_Aires'
+}).format(new Date());
+
+E('fDate').value = today();
+
+function budgets(){
+const s = E('fBudget'), old = s.value;
+s.replaceChildren(new Option('Sin presupuesto',''));
+d.presupuestos.forEach(p =>
+s.add(new Option(p.id+' - '+p.name,p.id)));
+s.value = old;
+}
+
+E('fBudget').onchange = () => {
+const p = d.presupuestos.find(x =>
+String(x.id) === E('fBudget').value);
+if(p) E('fClient').value = p.name;
+};
+
+function total(list,type){
+return list.filter(x=>x.tipo===type)
+.reduce((a,x)=>a+Math.round(Number(x.monto)*100),0)/100;
+}
+
+function draw(){
+const date = today();
+const period = E('fPeriod').value;
+const list = rows.filter(x =>
+period==='todo' ||
+x.fecha.startsWith(period==='dia'?date:
+period==='mes'?date.slice(0,7):date.slice(0,4)));
+
+const i=total(list,'Ingreso');
+const g=total(list,'Egreso');
+const a=total(list,'Aporte');
+const r=total(list,'Retiro');
+
+E('fBalance').innerHTML = ready ? `
+<div style="color:green">Ingresos: ${M(i)}</div>
+<div style="color:#a52a2a">Egresos: ${M(g)}</div>
+<div>Resultado operativo: ${M(i-g)}</div>
+<div style="font-size:16px">
+Aportes: ${M(a)}<br>
+Retiros: ${M(r)}<br>
+Movimiento neto de caja: ${M(i-g+a-r)}
+</div>` : 'Sin datos confirmados';
+
+E('fJobs').replaceChildren();
+const ids = [...new Set(list.map(x=>x.presupuesto_id).filter(Boolean))];
+ids.forEach(id=>{
+const l=list.filter(x=>x.presupuesto_id===id);
+const p=document.createElement('p');
+p.textContent=id+' - '+M(total(l,'Ingreso')-total(l,'Egreso'));
+E('fJobs').appendChild(p);
+});
+
+const box=E('fList');
+box.replaceChildren();
+if(ready && !list.length) box.textContent='Sin movimientos en este periodo.';
+list.forEach(x=>{
+const el=document.createElement('div');
+el.className='turno';
+const p=document.createElement('p');
+p.textContent=[x.fecha,x.tipo,M(x.monto),x.categoria,
+x.descripcion,x.cliente,x.medio_pago,
+x.registrado_por===session?.user?.id?'Vos':'Socio']
+.filter(Boolean).join(' | ');
+el.appendChild(p);
+const b=document.createElement('button');
+b.textContent='Editar movimiento';
+b.onclick=()=>edit(x);
+el.appendChild(b);
+const del=document.createElement('button');
+del.className='danger';
+del.textContent='Eliminar movimiento';
+del.onclick=()=>remove(x.id);
+el.appendChild(del);
+box.appendChild(el);
+});
+}
+
+async function load(){
+if(loading || busy) return;
+loading=true;
+const token=session?.access_token;
+try{
+if(!token) throw Error('Inicia sesion');
+let all=[],offset=0;
+while(true){
+const page=await api('/rest/v1/finanzas?select=*&order=fecha.desc,id.desc&limit=500&offset='+offset);
+all.push(...page);
+if(page.length<500) break;
+offset+=page.length;
+}
+if(token!==session?.access_token) return;
+rows=all;
+ready=true;
+E('fStatus').textContent='Sincronizado correctamente';
+budgets();
+}catch(e){
+rows=[];
+ready=false;
+E('fStatus').textContent='Sin conexion o sesion vencida. Volve a ingresar.';
+}finally{
+loading=false;
+E('fSave').disabled=!ready||busy;
+draw();
+}
+}
+
+function reset(){
+editing=null;
+E('fForm').reset();
+E('fDate').value=today();
+E('fSave').textContent='Guardar movimiento';
+}
+
+function edit(x){
+if(!ready||busy) return;
+editing=x.id;
+E('fDate').value=x.fecha;
+E('fType').value=x.tipo;
+E('fCat').value=x.categoria;
+E('fBudget').value=x.presupuesto_id||'';
+E('fClient').value=x.cliente||'';
+E('fDesc').value=x.descripcion;
+E('fAmount').value=x.monto;
+E('fPay').value=x.medio_pago||'Otro';
+E('fSave').textContent='Guardar cambios';
+E('fForm').scrollIntoView();
+}
+
+E('fForm').onsubmit=async e=>{
+e.preventDefault();
+if(!ready||busy||loading||!session?.access_token)return;
+const body={
+fecha:E('fDate').value,
+tipo:E('fType').value,
+categoria:E('fCat').value,
+descripcion:E('fDesc').value.trim(),
+monto:Number(E('fAmount').value),
+cliente:E('fClient').value.trim(),
+presupuesto_id:E('fBudget').value||null,
+medio_pago:E('fPay').value
+};
+if(!body.descripcion||!body.categoria||!(body.monto>0))return;
+busy=true;
+E('fSave').disabled=true;
+try{
+const result=await api('/rest/v1/finanzas'+
+(editing?'?id=eq.'+encodeURIComponent(editing):''),{
+method:editing?'PATCH':'POST',
+body:JSON.stringify(body)
+});
+if(!result?.length)throw Error('Sin confirmacion');
+reset();
+}catch(e){
+alert('No se confirmo el guardado. Revisa el historial antes de reintentar.');
+}finally{
+busy=false;
+await load();
+}
+};
+
+async function remove(id){
+if(!ready||busy||loading||!session?.access_token||
+!confirm('Eliminar este movimiento?'))return;
+busy=true;
+try{
+const result=await api('/rest/v1/finanzas?id=eq.'+
+encodeURIComponent(id),{method:'DELETE'});
+if(!result?.length)throw Error('Sin confirmacion');
+reset();
+}catch(e){alert('No se confirmo la eliminacion');}
+finally{busy=false;await load();}
+}
+
+E('fExport').onclick=()=>{
+if(!ready||!session?.access_token)return;
+const keys=['id','fecha','tipo','categoria','descripcion',
+'monto','cliente','presupuesto_id','medio_pago',
+'registrado_por','creado_en'];
+const quote=v=>{
+let s=String(v??'');
+if(/^\s*[=+@-]/.test(s))s="'"+s;
+return '"'+s.replace(/"/g,'""')+'"';
+};
+const csv='\uFEFF'+keys.join(';')+'\n'+
+rows.map(x=>keys.map(k=>quote(x[k])).join(';')).join('\n');
+const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+const link=document.createElement('a');
+link.href=url;
+link.download='SBSERVICE-Finanzas-'+today()+'.csv';
+link.click();
+setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
+
+E('fPeriod').onchange=draw;
+E('fCancel').onclick=reset;
+E('fRefresh').onclick=load;
+
+E('finOpen').onclick=()=>{
+sections.forEach(s=>s.style.display='none');
+panel.style.display='block';
+load();
+};
+
+E('finBack').onclick=()=>{
+panel.style.display='none';
+sections.forEach(s=>s.style.display='');
+};
+
+const previousLogout=logout;
+logout=function(){
+previousLogout();
+rows=[];
+ready=false;
+reset();
+budgets();
+draw();
+E('fSave').disabled=true;
+E('fStatus').textContent='Inicia sesion';
+};
+
+setInterval(()=>{
+if(panel.style.display==='block')load();
+},15000);
+})();
 </script>
 </body>
 </html>
